@@ -5,6 +5,32 @@ import pandas as pd
 from joblib import Parallel, delayed
 import numpy as np
 
+def crop_calc(my_image, landmarks, image_width, image_height, pixels_to_expend_x, pixels_to_expend_y):
+    min_x = 1
+    min_y = 1
+    max_x = 0
+    max_y = 0
+    for lm in landmarks:
+        min_x = min(min_x, lm.x)
+        min_y = min(min_y, lm.y)
+        max_x = max(max_x, lm.x)
+        max_y = max(max_y, lm.y)
+    min_x = int(min_x * image_width)
+    min_y = int(min_y * image_height)
+    max_x = int(max_x * image_width)
+    max_y = int(max_y * image_height)
+
+    gap_to_cut_x_l = int((max_x - min_x) / 10 + pixels_to_expend_x)
+    gap_to_cut_y_l = int((max_y - min_y) / 10 + pixels_to_expend_y)
+
+    image = my_image[max(0, min_y - gap_to_cut_y_l): min(image_height, max_y + gap_to_cut_y_l),
+                     max(0, min_x - gap_to_cut_x_l): min(image_width, max_x + gap_to_cut_x_l)]
+    cv2.imshow('', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    return cv2.resize(image, (150, 150)), [min_y - gap_to_cut_y_l, max_y + gap_to_cut_y_l,
+                                           min_x - gap_to_cut_x_l, max_x + gap_to_cut_x_l]
+
 
 def crop_for_recicle(image, results):
     """
@@ -20,121 +46,41 @@ def crop_for_recicle(image, results):
     pixels_to_expend_y = int(image_height / 25) + 35
     return_list = np.array([], ndmin=4)
     return_list = return_list.reshape((0, 150, 150, 3))
-    num_of_crops = 0
     flag_lh = 0
     flag_rh = 0
     flag_lw = 0
     flag_rw = 0
+
     if results.left_hand_landmarks:
         flag_lh = 1
-        lh_min_x = 1
-        lh_min_y = 1
-        lh_max_x = 0
-        lh_max_y = 0
-        for lm in results.left_hand_landmarks.landmark:
-            lh_min_x = min(lh_min_x, lm.x)
-            lh_min_y = min(lh_min_y, lm.y)
-            lh_max_x = max(lh_max_x, lm.x)
-            lh_max_y = max(lh_max_y, lm.y)
-        lh_min_x = int(lh_min_x * image_width)
-        lh_min_y = int(lh_min_y * image_height)
-        lh_max_x = int(lh_max_x * image_width)
-        lh_max_y = int(lh_max_y * image_height)
-
-        gap_to_cut_x_l = int((lh_max_x - lh_min_x) / 10 + pixels_to_expend_x)
-        gap_to_cut_y_l = int((lh_max_y - lh_min_y) / 10 + pixels_to_expend_y)
-
-        lh_image = my_image[max(0, lh_min_y - gap_to_cut_y_l): min(image_height, lh_max_y + gap_to_cut_y_l),
-                            max(0, lh_min_x - gap_to_cut_x_l): min(image_width, lh_max_x + gap_to_cut_x_l)]
-
-        lh_image = cv2.resize(lh_image, (150, 150))
-        return_list = np.append(return_list, lh_image)
-        num_of_crops += 1
-
-    else:
-        if results.pose_landmarks.landmark[19].visibility > 0.75:  # found left_wrist
-            flag_lw = 1
-            lh_min_x = 1
-            lh_min_y = 1
-            lh_max_x = 0
-            lh_max_y = 0
-            lm_list = [results.pose_landmarks.landmark[15],
-                       results.pose_landmarks.landmark[17],
-                       results.pose_landmarks.landmark[19],
-                       results.pose_landmarks.landmark[21]]
-            for lm in lm_list:  # left palm points
-                lh_min_x = min(lh_min_x, lm.x)
-                lh_min_y = min(lh_min_y, lm.y)
-                lh_max_x = max(lh_max_x, lm.x)
-                lh_max_y = max(lh_max_y, lm.y)
-            lh_min_x = int(lh_min_x * image_width)
-            lh_min_y = int(lh_min_y * image_height)
-            lh_max_x = int(lh_max_x * image_width)
-            lh_max_y = int(lh_max_y * image_height)
-
-            gap_to_cut_x_l = int((lh_max_x - lh_min_x) * 2 + pixels_to_expend_x)
-            gap_to_cut_y_l = int((lh_max_y - lh_min_y) * 2 + pixels_to_expend_y)
-
-            lh_image = my_image[max(0, lh_min_y - gap_to_cut_y_l): min(image_height, lh_max_y + gap_to_cut_y_l),
-                                max(0, lh_min_x - gap_to_cut_x_l): min(image_width, lh_max_x + gap_to_cut_x_l)]
-
-            lh_image = cv2.resize(lh_image, (150, 150))
-            return_list = np.append(return_list, lh_image)
-            num_of_crops += 1
+        image, list_to_crop_l = crop_calc(my_image, results.left_hand_landmarks.landmark,
+                                          image_width, image_height, pixels_to_expend_x, pixels_to_expend_y)
+        return_list = np.append(return_list, image)
+    elif results.pose_landmarks.landmark[19].visibility > 0.75:
+        flag_lw = 1
+        lm_list = [results.pose_landmarks.landmark[15],
+                   results.pose_landmarks.landmark[17],
+                   results.pose_landmarks.landmark[19],
+                   results.pose_landmarks.landmark[21]]
+        image, list_to_crop_l = crop_calc(my_image, lm_list,
+                                          image_width, image_height, pixels_to_expend_x, pixels_to_expend_y)
+        return_list = np.append(return_list, image)
 
     if results.right_hand_landmarks:
         flag_rh = 1
-        rh_min_x = 1
-        rh_min_y = 1
-        rh_max_x = 0
-        rh_max_y = 0
-        for lm in results.right_hand_landmarks.landmark:
-            rh_min_x = min(rh_min_x, lm.x)
-            rh_min_y = min(rh_min_y, lm.y)
-            rh_max_x = max(rh_max_x, lm.x)
-            rh_max_y = max(rh_max_y, lm.y)
-        rh_min_x = int(rh_min_x * image_width)
-        rh_min_y = int(rh_min_y * image_height)
-        rh_max_x = int(rh_max_x * image_width)
-        rh_max_y = int(rh_max_y * image_height)
+        image, list_to_crop_r = crop_calc(my_image, results.right_hand_landmarks.landmark,
+                                          image_width, image_height, pixels_to_expend_x, pixels_to_expend_y)
+        return_list = np.append(return_list, image)
 
-        gap_to_cut_x_r = int((rh_max_x - rh_min_x) / 10 + pixels_to_expend_x)
-        gap_to_cut_y_r = int((rh_max_y - rh_min_y) / 10 + pixels_to_expend_y)
-        rh_image = my_image[max(0, rh_min_y - gap_to_cut_y_r): min(image_height, rh_max_y + gap_to_cut_y_r),
-                            max(0, rh_min_x - gap_to_cut_x_r): min(image_width, rh_max_x + gap_to_cut_x_r)]
-
-        rh_image = cv2.resize(rh_image, (150, 150))
-        return_list = np.append(rh_image, return_list)
-        num_of_crops += 1
-
-    else:
-        if results.pose_landmarks.landmark[20].visibility > 0.75:  # found right_wrist
-            flag_rw = 1
-            rh_min_x = 1
-            rh_min_y = 1
-            rh_max_x = 0
-            rh_max_y = 0
-            lm_list = [results.pose_landmarks.landmark[16],
-                       results.pose_landmarks.landmark[18],
-                       results.pose_landmarks.landmark[20],
-                       results.pose_landmarks.landmark[22]]
-            for lm in lm_list:  # right palm points
-                rh_min_x = min(rh_min_x, lm.x)
-                rh_min_y = min(rh_min_y, lm.y)
-                rh_max_x = max(rh_max_x, lm.x)
-                rh_max_y = max(rh_max_y, lm.y)
-            rh_min_x = int(rh_min_x * image_width)
-            rh_min_y = int(rh_min_y * image_height)
-            rh_max_x = int(rh_max_x * image_width)
-            rh_max_y = int(rh_max_y * image_height)
-            gap_to_cut_x_r = int((rh_max_x - rh_min_x) * 2 + pixels_to_expend_x)
-            gap_to_cut_y_r = int((rh_max_y - rh_min_y) * 2 + pixels_to_expend_y)
-            rh_image = my_image[max(0, rh_min_y - gap_to_cut_y_r): min(image_height, rh_max_y + gap_to_cut_y_r),
-                                max(0, rh_min_x - gap_to_cut_x_r): min(image_width, rh_max_x + gap_to_cut_x_r)]
-
-            rh_image = cv2.resize(rh_image, (150, 150))
-            return_list = np.append(return_list, rh_image)
-            num_of_crops += 1
+    elif results.pose_landmarks.landmark[20].visibility > 0.75:
+        flag_rw = 0
+        lm_list = [results.pose_landmarks.landmark[16],
+                   results.pose_landmarks.landmark[18],
+                   results.pose_landmarks.landmark[20],
+                   results.pose_landmarks.landmark[22]]
+        image, list_to_crop_r = crop_calc(my_image, lm_list, image_width, image_height,
+                                          pixels_to_expend_x, pixels_to_expend_y)
+        return_list = np.append(return_list, image)
 
     if results.face_landmarks:
         f_min_x = 1
@@ -156,136 +102,51 @@ def crop_for_recicle(image, results):
         my_image = cv2.rectangle(my_image, (max(0, f_min_x - gap_to_cut_x), max(0, f_min_y - gap_to_cut_y)),
                                  (min(image_width, f_max_x + gap_to_cut_x),
                                   min(image_height, f_max_y + gap_to_cut_y)), (0, 0, 0), -1)
-    if flag_lh == 1:
-        my_image = cv2.rectangle(my_image, (max(0, lh_min_x - gap_to_cut_x_l), max(0, lh_min_y - gap_to_cut_y_l)),
-                                 (min(image_width, lh_max_x + gap_to_cut_x_l),
-                                  min(image_height, lh_max_y + gap_to_cut_y_l)), (0, 0, 0), -1)
-    if flag_rh == 1:
-        my_image = cv2.rectangle(my_image, (max(0, rh_min_x - gap_to_cut_x_r), max(0, rh_min_y - gap_to_cut_y_r)),
-                                 (min(image_width, rh_max_x + gap_to_cut_x_r),
-                                  min(image_height, rh_max_y + gap_to_cut_y_r)), (0, 0, 0), -1)
-    if flag_lw == 1:
-        my_image = cv2.rectangle(my_image, (max(0, lh_min_x - gap_to_cut_x_l), max(0, lh_min_y - gap_to_cut_y_l)),
-                                 (min(image_width, lh_max_x + gap_to_cut_x_l),
-                                  min(image_height, lh_max_y + gap_to_cut_y_l)), (0, 0, 0), -1)
-    if flag_rw == 1:
-        my_image = cv2.rectangle(my_image, (max(0, rh_min_x - gap_to_cut_x_r), max(0, rh_min_y - gap_to_cut_y_r)),
-                                 (min(image_width, rh_max_x + gap_to_cut_x_r),
-                                  min(image_height, rh_max_y + gap_to_cut_y_r)), (0, 0, 0), -1)
+    if flag_lh == 1 or flag_lw == 1:
+        my_image = cv2.rectangle(my_image, (max(0, list_to_crop_l[2]), max(0, list_to_crop_l[0])),
+                                 (min(image_width, list_to_crop_l[3]),
+                                  min(image_height, list_to_crop_l[1])), (0, 0, 0), -1)
+    if flag_rh == 1 or flag_rw == 1:
+        my_image = cv2.rectangle(my_image, (max(0, list_to_crop_r[2]), max(0, list_to_crop_r[0])),
+                                 (min(image_width, list_to_crop_r[3]),
+                                  min(image_height, list_to_crop_r[1])), (0, 0, 0), -1)
 
     with mp_holistic.Holistic(
             static_image_mode=True,
             model_complexity=2) as holistic:
         results = holistic.process(cv2.cvtColor(my_image, cv2.COLOR_BGR2RGB))
         if not results.face_landmarks:
-            return return_list.reshape((num_of_crops, 150, 150, 3))
+            return return_list
         if results.left_hand_landmarks:
-            lh_min_x = 1
-            lh_min_y = 1
-            lh_max_x = 0
-            lh_max_y = 0
-            for lm in results.left_hand_landmarks.landmark:
-                lh_min_x = min(lh_min_x, lm.x)
-                lh_min_y = min(lh_min_y, lm.y)
-                lh_max_x = max(lh_max_x, lm.x)
-                lh_max_y = max(lh_max_y, lm.y)
-            lh_min_x = int(lh_min_x * image_width)
-            lh_min_y = int(lh_min_y * image_height)
-            lh_max_x = int(lh_max_x * image_width)
-            lh_max_y = int(lh_max_y * image_height)
-
-            gap_to_cut_x_l = int((lh_max_x - lh_min_x) / 10 + pixels_to_expend_x)
-            gap_to_cut_y_l = int((lh_max_y - lh_min_y) / 10 + pixels_to_expend_y)
-
-            lh_image = my_image[max(0, lh_min_y - gap_to_cut_y_l): min(image_height, lh_max_y + gap_to_cut_y_l),
-                                max(0, lh_min_x - gap_to_cut_x_l): min(image_width, lh_max_x + gap_to_cut_x_l)]
-
-            lh_image = cv2.resize(lh_image, (150, 150))
-            return_list = np.append(return_list, lh_image)
-            num_of_crops += 1
-
-        else:
-            if results.pose_landmarks.landmark[19].visibility > 0.75:  # found left_wrist
-                lh_min_x = 1
-                lh_min_y = 1
-                lh_max_x = 0
-                lh_max_y = 0
-                lm_list = [results.pose_landmarks.landmark[15],
-                           results.pose_landmarks.landmark[17],
-                           results.pose_landmarks.landmark[19],
-                           results.pose_landmarks.landmark[21]]
-                for lm in lm_list:  # left palm points
-                    lh_min_x = min(lh_min_x, lm.x)
-                    lh_min_y = min(lh_min_y, lm.y)
-                    lh_max_x = max(lh_max_x, lm.x)
-                    lh_max_y = max(lh_max_y, lm.y)
-                lh_min_x = int(lh_min_x * image_width)
-                lh_min_y = int(lh_min_y * image_height)
-                lh_max_x = int(lh_max_x * image_width)
-                lh_max_y = int(lh_max_y * image_height)
-
-                gap_to_cut_x_l = int((lh_max_x - lh_min_x) * 2 + pixels_to_expend_x)
-                gap_to_cut_y_l = int((lh_max_y - lh_min_y) * 2 + pixels_to_expend_y)
-
-                lh_image = my_image[max(0, lh_min_y - gap_to_cut_y_l): min(image_height, lh_max_y + gap_to_cut_y_l),
-                                    max(0, lh_min_x - gap_to_cut_x_l): min(image_width, lh_max_x + gap_to_cut_x_l)]
-
-                lh_image = cv2.resize(lh_image, (150, 150))
-                return_list = np.append(return_list, lh_image)
-                num_of_crops += 1
+            image, list_to_crop_l = crop_calc(my_image, results.left_hand_landmarks.landmark,
+                                              image_width, image_height,
+                                              pixels_to_expend_x, pixels_to_expend_y)
+            return_list = np.append(return_list, image)
+        elif results.pose_landmarks.landmark[19].visibility > 0.75:
+            lm_list = [results.pose_landmarks.landmark[15],
+                       results.pose_landmarks.landmark[17],
+                       results.pose_landmarks.landmark[19],
+                       results.pose_landmarks.landmark[21]]
+            image, list_to_crop_l = crop_calc(my_image, lm_list,
+                                              image_width, image_height,
+                                              pixels_to_expend_x, pixels_to_expend_y)
+            return_list = np.append(return_list, image)
 
         if results.right_hand_landmarks:
-            rh_min_x = 1
-            rh_min_y = 1
-            rh_max_x = 0
-            rh_max_y = 0
-            for lm in results.right_hand_landmarks.landmark:
-                rh_min_x = min(rh_min_x, lm.x)
-                rh_min_y = min(rh_min_y, lm.y)
-                rh_max_x = max(rh_max_x, lm.x)
-                rh_max_y = max(rh_max_y, lm.y)
-            rh_min_x = int(rh_min_x * image_width)
-            rh_min_y = int(rh_min_y * image_height)
-            rh_max_x = int(rh_max_x * image_width)
-            rh_max_y = int(rh_max_y * image_height)
+            image, list_to_crop_r = crop_calc(my_image, results.right_hand_landmarks.landmark,
+                                              image_width, image_height,
+                                              pixels_to_expend_x, pixels_to_expend_y)
+            return_list = np.append(return_list, image)
 
-            gap_to_cut_x_r = int((rh_max_x - rh_min_x) / 10 + pixels_to_expend_x)
-            gap_to_cut_y_r = int((rh_max_y - rh_min_y) / 10 + pixels_to_expend_y)
-            rh_image = my_image[max(0, rh_min_y - gap_to_cut_y_r): min(image_height, rh_max_y + gap_to_cut_y_r),
-                                max(0, rh_min_x - gap_to_cut_x_r): min(image_width, rh_max_x + gap_to_cut_x_r)]
-
-            rh_image = cv2.resize(rh_image, (150, 150))
-            return_list = np.append(return_list, rh_image)
-            num_of_crops += 1
-
-        else:
-            if results.pose_landmarks.landmark[20].visibility > 0.75:  # found right_wrist
-                rh_min_x = 1
-                rh_min_y = 1
-                rh_max_x = 0
-                rh_max_y = 0
-                lm_list = [results.pose_landmarks.landmark[16],
-                           results.pose_landmarks.landmark[18],
-                           results.pose_landmarks.landmark[20],
-                           results.pose_landmarks.landmark[22]]
-                for lm in lm_list:  # right palm points
-                    rh_min_x = min(rh_min_x, lm.x)
-                    rh_min_y = min(rh_min_y, lm.y)
-                    rh_max_x = max(rh_max_x, lm.x)
-                    rh_max_y = max(rh_max_y, lm.y)
-                rh_min_x = int(rh_min_x * image_width)
-                rh_min_y = int(rh_min_y * image_height)
-                rh_max_x = int(rh_max_x * image_width)
-                rh_max_y = int(rh_max_y * image_height)
-                gap_to_cut_x_r = int((rh_max_x - rh_min_x) * 2 + pixels_to_expend_x)
-                gap_to_cut_y_r = int((rh_max_y - rh_min_y) * 2 + pixels_to_expend_y)
-                rh_image = my_image[max(0, rh_min_y - gap_to_cut_y_r): min(image_height, rh_max_y + gap_to_cut_y_r),
-                                    max(0, rh_min_x - gap_to_cut_x_r): min(image_width, rh_max_x + gap_to_cut_x_r)]
-
-                rh_image = cv2.resize(rh_image, (150, 150))
-                return_list = np.append(return_list, rh_image)
-                num_of_crops += 1
-        return_list = return_list.reshape((num_of_crops, 150, 150, 3))
+        elif results.pose_landmarks.landmark[20].visibility > 0.75:
+            lm_list = [results.pose_landmarks.landmark[16],
+                       results.pose_landmarks.landmark[18],
+                       results.pose_landmarks.landmark[20],
+                       results.pose_landmarks.landmark[22]]
+            image, list_to_crop_r = crop_calc(my_image, lm_list,
+                                              image_width, image_height,
+                                              pixels_to_expend_x, pixels_to_expend_y)
+            return_list = np.append(return_list, image)
         return return_list
 
 
