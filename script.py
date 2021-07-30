@@ -199,14 +199,9 @@ if __name__ == '__main__':
     mp_drawing = mp.solutions.drawing_utils
     mp_holistic = mp.solutions.holistic
     INPUT_PATH = 'train.csv'
-    NUM_WORKERS = 6
+    NUM_WORKERS = 8
 
     base_csv = pd.read_csv(INPUT_PATH)
-    # test part
-    base_csv = base_csv.sample(frac=1)
-    base_csv = base_csv[:50]
-    base_csv['frame_path'] = base_csv['frame_path'].apply(lambda x: 'F:/Train_DS/' + str(x))
-    # end of test part
 
     len_df = len(base_csv) // NUM_WORKERS
     list_for_parallel = []
